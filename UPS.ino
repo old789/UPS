@@ -100,7 +100,7 @@ byte state_eeprom = STATE_UNKNOWN;
 
 void loop() {
 unsigned long current_timer = millis();
-  wdt_reset();
+
   if ( current_timer < prev_timer ) { // timer overflown
     prev_timer = 0;
     return;
@@ -110,6 +110,8 @@ unsigned long current_timer = millis();
     return;
   }
   prev_timer = current_timer;
+
+  wdt_reset();
   
   led_state=digitalRead(LED_BUILTIN);
   digitalWrite(LED_BUILTIN, led_state ^ HIGH);
