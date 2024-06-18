@@ -15,7 +15,7 @@ const int main_loop_delay = 500;      // ms
 const int iverter_start_delay = 2;    // s
 const int iverter_stop_delay = 30;    // s
 const int charger_start_delay = 180;  // s
-const int max_charger_work_time = ( 4 * 3600 ); // s
+const int max_charger_work_time = ( 4 * 3600 * 3 ); // s
 const int battery_measuring_period = 30;  // s
 const int delta_series_long = 20 ; // count of battery measurements
 
