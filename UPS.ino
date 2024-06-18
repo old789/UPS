@@ -1,42 +1,52 @@
-#define USE_SERIAL
+//#define USE_SERIAL
+#define LCD
 
 #include <avr/wdt.h>
 #include <EEPROM.h>
 
+#ifdef LCD
+#include <LiquidCrystal_I2C.h>
+#include <Wire.h>
+// LCD geometry
+#define LCD_ADDR 0x27
+#define LCD_COLS 20
+#define LCD_ROWS 4
+#endif
+
 #define EEPROM_STATE_BYTE 0
 #define EEPROM_MARK_BYTE 0xa
 
-#define STATE_UNKNOWN   0
-#define STATE_STANDBY   1
+#define STATE_UNKNOWN 0
+#define STATE_STANDBY 1
 #define STATE_INVERTING 2
-#define STATE_CHARGING  3
+#define STATE_CHARGING 3
 
-const int main_loop_delay = 500;      // ms
-const int iverter_start_delay = 2;    // s
-const int iverter_stop_delay = 30;    // s
-const int charger_start_delay = 180;  // s
-const int max_charger_work_time = ( 4 * 3600 * 3 ); // s
-const int battery_measuring_period = 30;  // s
-const int delta_series_long = 20 ; // count of battery measurements
+const int main_loop_delay = 500;                   // ms
+const int iverter_start_delay = 2;                 // s
+const int iverter_stop_delay = 30;                 // s
+const int charger_start_delay = 180;               // s
+const int max_charger_work_time = (4 * 3600 * 3);  // s
+const int battery_measuring_period = 30;           // s
+const int delta_series_long = 20;                  // count of battery measurements
 
-const float R1 = 33350.0;   // ohms
-const float R2 = 7480.0;    // ohms
-const float VREF = 5.12;    // volts
-const int NBITS = 3;        // oversampling bits
+const float R1 = 33350.0;                 // ohms
+const float R2 = 7480.0;                  // ohms
+const float VREF = 5.12;                  // volts
+const int NBITS = 3;                      // oversampling bits
 const float MIN_BATTERY_VOLTAGE = 12.7;   // volts
 const float MAX_BATTERY_VOLTAGE = 14.35;  // volts
 const int RAW_DATA_LENGTH = 32;
 const int LOW_DELTA = -10000;
 const int HIGH_DELTA = 10000;
 
-const int tics_before_inverter_start = ( iverter_start_delay * ( 1000 / main_loop_delay ) ); 
-const int tics_before_inverter_stop = ( iverter_stop_delay * ( 1000 / main_loop_delay ) ); 
-const int max_charger_work_tics = ( max_charger_work_time *  ( 1000l / main_loop_delay ) );
-const int tics_before_charger_start = ( charger_start_delay * ( 1000l / main_loop_delay ) );
+const int tics_before_inverter_start = (iverter_start_delay * (1000 / main_loop_delay));
+const int tics_before_inverter_stop = (iverter_stop_delay * (1000 / main_loop_delay));
+const int max_charger_work_tics = (max_charger_work_time * (1000l / main_loop_delay));
+const int tics_before_charger_start = (charger_start_delay * (1000l / main_loop_delay));
 const int BITRESOLUTION = pow(2, 10 + NBITS);
-const float RR = ( R2 / ( R1 + R2 ) );
-const int SAMPLES = (int)( pow(4,(float) NBITS ) + 0.5 );
-const int tics_between_battery_measure = ( battery_measuring_period * ( 1000 / main_loop_delay ) ); 
+const float RR = (R2 / (R1 + R2));
+const int SAMPLES = (int)(pow(4, (float)NBITS) + 0.5);
+const int tics_between_battery_measure = (battery_measuring_period * (1000 / main_loop_delay));
 
 byte external_power_state = HIGH;
 byte external_power_state_prev = HIGH;
@@ -57,69 +67,88 @@ byte cursor = 0;
 float avg_prev = 0;
 unsigned int delta_is_ok = 0;
 
+#ifdef LCD
+LiquidCrystal_I2C lcd(LCD_ADDR,  LCD_COLS, LCD_ROWS);
+#endif
+
 /* 
  * без скидання MCUSR буде bootloop після спрацювання watchdog після включення живлення на чіпах PA & PB
  * що цікаво, після скидання сигналом RESET або у випадку чіпів P, такого ефекту нема.
  * Взагалі-то досить код із цієї функції помістити в функцію setup, але мануал на чіп радить так.
  */
- 
+
 void clr_mcusr(void) __attribute__((naked)) __attribute__((section(".init3")));
 
-void clr_mcusr(void){
+void clr_mcusr(void) {
   MCUSR = 0;
   wdt_disable();
 }
 
 void setup() {
-byte state_eeprom = STATE_UNKNOWN;
- 
+  byte state_eeprom = STATE_UNKNOWN;
+  int lcd_status = 0;
+
   pinMode(A0, INPUT);
   pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(2, INPUT);          //  external power sensor
-  pinMode(3, OUTPUT);         //  charger relay
-  pinMode(4, OUTPUT);         //  inverter relay
-  digitalWrite(4,HIGH);       //  inverter relay is inverted
+  pinMode(2, INPUT);      //  external power sensor
+  pinMode(3, OUTPUT);     //  charger relay
+  pinMode(4, OUTPUT);     //  inverter relay
+  digitalWrite(4, HIGH);  //  inverter relay is inverted
 #ifdef USE_SERIAL
   Serial.begin(9600);
 #endif
+#ifdef LCD
+    lcd.init();
+    lcd.backlight();
+    lcd.print("Booting...");
+#endif
   read_battery_voltage();
-  if ( ! is_eeprom_correct() ) {
+  if (!is_eeprom_correct()) {
     eeprom_init();
-  }else{
-    state_eeprom = EEPROM.read( EEPROM_STATE_BYTE );
-    if ( state_eeprom == STATE_INVERTING or state_eeprom == STATE_CHARGING ) {
+  } else {
+    state_eeprom = EEPROM.read(EEPROM_STATE_BYTE);
+    if (state_eeprom == STATE_INVERTING or state_eeprom == STATE_CHARGING) {
       battery_needs_charge = true;
-    }    
+    }
   }
-  wdt_enable (WDTO_8S);
+  wdt_enable(WDTO_8S);
 #ifdef USE_SERIAL
   print_previous_state(state_eeprom);
   Serial.println("UPS booted");
 #endif
-}
+#ifdef LCD
+    lcd.clear();
+    lcd.print(" L I C  Bt   Av   ^");
+    lcd.setCursor(0,1);
+    lcd.print(" 1 0 0 xxxx xxxx ");
+    lcd.print(cursor);
+    lcd.setCursor(0,3);
+    lcd.print("UPS booted");
+#endif
+} 
 
 void loop() {
-unsigned long current_timer = millis();
+  unsigned long current_timer = millis();
 
-  if ( current_timer < prev_timer ) { // timer overflown
+  if (current_timer < prev_timer) {  // timer overflown
     prev_timer = 0;
     return;
   }
-  
-  if ( ( current_timer - prev_timer ) < main_loop_delay ) {
+
+  if ((current_timer - prev_timer) < main_loop_delay) {
     return;
   }
   prev_timer = current_timer;
 
   wdt_reset();
-  
-  led_state=digitalRead(LED_BUILTIN);
+
+  led_state = digitalRead(LED_BUILTIN);
   digitalWrite(LED_BUILTIN, led_state ^ HIGH);
 
-  external_power_state=digitalRead(2); 
-  if ( external_power_state_prev == external_power_state ){
+  external_power_state = digitalRead(2);
+  if (external_power_state_prev == external_power_state) {
     last_change_state++;
-  }else{ 
+  } else {
     last_change_state = 0;
     external_power_state_prev = external_power_state;
 #ifdef USE_SERIAL
@@ -128,90 +157,90 @@ unsigned long current_timer = millis();
 #endif
   }
 
-  inverter_state=digitalRead(4);
-  charger_state=digitalRead(3);
+  inverter_state = digitalRead(4);
+  charger_state = digitalRead(3);
   if (external_power_state == LOW) {  // power failed
-    if ( last_change_state > tics_before_inverter_start ) {
+    if (last_change_state > tics_before_inverter_start) {
       if (charger_state == HIGH) {
-         digitalWrite(3,LOW);
+        digitalWrite(3, LOW);
 #ifdef USE_SERIAL
         Serial.println("Charger OFF");
 #endif
       }
-      if (inverter_state != LOW) {        
-        digitalWrite(4,LOW);
-        EEPROM.update( EEPROM_STATE_BYTE, STATE_INVERTING );
+      if (inverter_state != LOW) {
+        digitalWrite(4, LOW);
+        EEPROM.update(EEPROM_STATE_BYTE, STATE_INVERTING);
 #ifdef USE_SERIAL
         Serial.println("Inverter ON");
 #endif
-      }        
-    }         
-  }else{ // power exists
-    if ( last_change_state > tics_before_inverter_stop ) {
+      }
+    }
+  } else {  // power exists
+    if (last_change_state > tics_before_inverter_stop) {
       if (inverter_state != HIGH) {
-        digitalWrite(4,HIGH);
+        digitalWrite(4, HIGH);
         battery_needs_charge = true;
 #ifdef USE_SERIAL
         Serial.println("Inverter OFF");
 #endif
       }
-      if ( ( inverter_state == HIGH ) and ( charger_state == LOW ) and ( last_change_state > tics_before_charger_start ) ) {
-        if ( battery_needs_charge ) {
-          digitalWrite(3,HIGH);
+      if ((inverter_state == HIGH) and (charger_state == LOW) and (last_change_state > tics_before_charger_start)) {
+        if (battery_needs_charge) {
+          digitalWrite(3, HIGH);
           charger_working_tics = 0;
           delta_is_ok = 0;
-          EEPROM.update( EEPROM_STATE_BYTE, STATE_CHARGING );
+          EEPROM.update(EEPROM_STATE_BYTE, STATE_CHARGING);
 #ifdef USE_SERIAL
           Serial.println("Charger ON");
 #endif
-        }else{
-          if ( average_battery_voltage <= MIN_BATTERY_VOLTAGE ) {
-            digitalWrite(3,HIGH);
+        } else {
+          if (average_battery_voltage <= MIN_BATTERY_VOLTAGE) {
+            digitalWrite(3, HIGH);
             battery_needs_charge = true;
             charger_working_tics = 0;
             delta_is_ok = 0;
-            EEPROM.update( EEPROM_STATE_BYTE, STATE_CHARGING );
+            EEPROM.update(EEPROM_STATE_BYTE, STATE_CHARGING);
 #ifdef USE_SERIAL
-             Serial.print("Charger ON - battery discharged (");
-             Serial.print(average_battery_voltage, 3);
-             Serial.println(")");
+            Serial.print("Charger ON - battery discharged (");
+            Serial.print(average_battery_voltage, 3);
+            Serial.println(")");
 #endif
           }
         }
       }
     }
-  }    
+  }
 
-  if (charger_state == HIGH){
+  if (charger_state == HIGH) {
     charger_working_tics++;
-    if ( charger_working_tics > max_charger_work_tics ) {
-      digitalWrite(3,LOW);
+    if (charger_working_tics > max_charger_work_tics) {
+      digitalWrite(3, LOW);
       battery_needs_charge = false;
-      EEPROM.update( EEPROM_STATE_BYTE, STATE_STANDBY );
+      EEPROM.update(EEPROM_STATE_BYTE, STATE_STANDBY);
 #ifdef USE_SERIAL
       Serial.println("Charger OFF by overtime");
 #endif
     }
- }
+  }
 
-  if ( last_battery_measure < tics_between_battery_measure ) {
+  if (last_battery_measure < tics_between_battery_measure) {
     last_battery_measure++;
-  }else{
+  } else {
     last_battery_measure = 0;
     read_battery_voltage();
-    if (charger_state == HIGH){
-      if ( is_battery_charged() ){
-        digitalWrite(3,LOW);
+    if (charger_state == HIGH) {
+      if (is_battery_charged()) {
+        digitalWrite(3, LOW);
         battery_needs_charge = false;
-        EEPROM.update( EEPROM_STATE_BYTE, STATE_STANDBY );
+        EEPROM.update(EEPROM_STATE_BYTE, STATE_STANDBY);
 #ifdef USE_SERIAL
         Serial.println("Charger OFF - battery charged");
 #endif
-      }else{
-        if ( average_battery_voltage >= MAX_BATTERY_VOLTAGE ) {
-          digitalWrite(3,LOW);
+      } else {
+        if (average_battery_voltage >= MAX_BATTERY_VOLTAGE) {
+          digitalWrite(3, LOW);
           battery_needs_charge = false;
-          EEPROM.update( EEPROM_STATE_BYTE, STATE_STANDBY );
+          EEPROM.update(EEPROM_STATE_BYTE, STATE_STANDBY);
 #ifdef USE_SERIAL
           Serial.println("Charger OFF - battery reached max. voltage");
 #endif
@@ -219,35 +248,34 @@ unsigned long current_timer = millis();
       }
     }
   }
-  
 }
 
-void read_battery_voltage(){
-long dv = 0;
-long bl = 0;
-byte i = 0;
-float avg = 0;
-float delta = 0;
+void read_battery_voltage() {
+  long dv = 0;
+  long bl = 0;
+  byte i = 0;
+  float avg = 0;
+  float delta = 0;
 
   // there is oversampling
-  for ( i = 0; i < 10; i++ )
-    for ( int j=0; j < SAMPLES; j++ ) 
+  for (i = 0; i < 10; i++)
+    for (int j = 0; j < SAMPLES; j++)
       dv += analogRead(A0);
-  dv = ( dv / 10 );
+  dv = (dv / 10);
   dv = dv >> NBITS;
-  actual_battery_voltage = ( ( (float)dv * VREF ) / BITRESOLUTION ) / RR;
-  
-  if ( actual_battery_voltage < 3.0 ) {
-  #ifdef USE_SERIAL
+  actual_battery_voltage = (((float)dv * VREF) / BITRESOLUTION) / RR;
+
+  if (actual_battery_voltage < 3.0) {
+#ifdef USE_SERIAL
     Serial.println("Battery disconnected");
-  #endif
+#endif
     battery_needs_charge = true;
     battery_needs_reload = true;
     return;
   }
-  
-  if ( battery_needs_reload ) {
-    for ( i = 0; i < RAW_DATA_LENGTH; i++ ) {
+
+  if (battery_needs_reload) {
+    for (i = 0; i < RAW_DATA_LENGTH; i++) {
       raw_battery_level[i] = dv;
       deltas[i] = 0;
     }
@@ -256,24 +284,23 @@ float delta = 0;
     avg_prev = dv;
   } else {
     raw_battery_level[cursor] = dv;
-      
-    for ( i = 0; i < RAW_DATA_LENGTH; i++ ){
+
+    for (i = 0; i < RAW_DATA_LENGTH; i++) {
       bl += raw_battery_level[i];
     }
     avg = (float)bl / RAW_DATA_LENGTH;
-    average_battery_voltage = ( ( avg * VREF ) / BITRESOLUTION ) / RR;
-    
+    average_battery_voltage = ((avg * VREF) / BITRESOLUTION) / RR;
+
     delta = avg - avg_prev;
     avg_prev = avg;
-    deltas[cursor]=(int)(delta*1000+0.5);
-      
-     cursor++;
-    if ( cursor >= RAW_DATA_LENGTH ) {
+    deltas[cursor] = (int)(delta * 1000 + 0.5);
+
+    cursor++;
+    if (cursor >= RAW_DATA_LENGTH) {
       cursor = 0;
     }
-  
   }
-/*  
+  /*  
 #ifdef USE_SERIAL
   Serial.print(actual_battery_voltage,3);
   Serial.print(" ");
@@ -284,13 +311,13 @@ float delta = 0;
 */
 }
 
-bool is_battery_charged(){
-long delta_sum = 0;
+bool is_battery_charged() {
+  long delta_sum = 0;
 
-  for ( byte i = 0; i < RAW_DATA_LENGTH; i++ ){
-     delta_sum += deltas[i];
+  for (byte i = 0; i < RAW_DATA_LENGTH; i++) {
+    delta_sum += deltas[i];
   }
-/*  
+  /*  
 #ifdef USE_SERIAL
   Serial.print(delta_is_ok);
   Serial.print(" ");
@@ -301,46 +328,46 @@ long delta_sum = 0;
   Serial.println(delta_sum);
 #endif
 */
-  if ( ( delta_sum < LOW_DELTA ) or ( delta_sum > HIGH_DELTA ) ){
+  if ((delta_sum < LOW_DELTA) or (delta_sum > HIGH_DELTA)) {
     delta_is_ok = 0;
-    return(false);
+    return (false);
   }
   delta_is_ok++;
-  if ( delta_is_ok >= delta_series_long ){
-    return(true);
+  if (delta_is_ok >= delta_series_long) {
+    return (true);
   }
-  return(false);
+  return (false);
 }
 
 bool is_eeprom_correct() {
-  if ( EEPROM.read( EEPROM_MARK_BYTE ) == 0x55 and EEPROM.read( EEPROM_MARK_BYTE + 1 ) == 0xaa ) {
+  if (EEPROM.read(EEPROM_MARK_BYTE) == 0x55 and EEPROM.read(EEPROM_MARK_BYTE + 1) == 0xaa) {
 #ifdef USE_SERIAL
     Serial.println("EEPROM correct");
 #endif
-    return( true );
+    return (true);
   }
 #ifdef USE_SERIAL
-    Serial.println("EEPROM invalid");
+  Serial.println("EEPROM invalid");
 #endif
-  return( false );
+  return (false);
 }
 
 bool eeprom_init() {
-  for ( byte i = 0; i <  EEPROM_MARK_BYTE; i++ ){
-    EEPROM.update( i, 0 );
+  for (byte i = 0; i < EEPROM_MARK_BYTE; i++) {
+    EEPROM.update(i, 0);
   }
-  EEPROM.update( EEPROM_MARK_BYTE, 0x55 );
-  EEPROM.update( EEPROM_MARK_BYTE + 1, 0xaa );
+  EEPROM.update(EEPROM_MARK_BYTE, 0x55);
+  EEPROM.update(EEPROM_MARK_BYTE + 1, 0xaa);
 #ifdef USE_SERIAL
   Serial.println("EEPROM initialized");
 #endif
-  return( is_eeprom_correct() );
+  return (is_eeprom_correct());
 }
 
 #ifdef USE_SERIAL
-void print_previous_state( byte state_eeprom ){
+void print_previous_state(byte state_eeprom) {
   Serial.print("Previous state is ");
-  switch ( state_eeprom ) {
+  switch (state_eeprom) {
     case STATE_UNKNOWN:
       Serial.println("unknown");
       break;
