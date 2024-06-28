@@ -1,4 +1,4 @@
-//#define USE_SERIAL
+#define USE_SERIAL
 #define LCD
 
 #include <avr/wdt.h>
@@ -12,6 +12,8 @@
 #define LCD_COLS 20
 #define LCD_ROWS 4
 #endif
+
+#define FPSTR(pstr) (const __FlashStringHelper*)(pstr)  // some compatibility with esp8266/esp32
 
 #define EEPROM_STATE_BYTE 0
 #define EEPROM_MARK_BYTE 0xa
@@ -87,6 +89,8 @@ void clr_mcusr(void) {
 void setup() {
   byte state_eeprom = STATE_UNKNOWN;
   int lcd_status = 0;
+  PGM_P msg_booting = PSTR("Booting...");
+  PGM_P msg_booted = PSTR("UPS booted");
 
   pinMode(A0, INPUT);
   pinMode(LED_BUILTIN, OUTPUT);
@@ -96,11 +100,13 @@ void setup() {
   digitalWrite(4, HIGH);  //  inverter relay is inverted
 #ifdef USE_SERIAL
   Serial.begin(9600);
+  delay(500);
+  Serial.println(FPSTR(msg_booting));
 #endif
 #ifdef LCD
     lcd.init();
     lcd.backlight();
-    lcd.print("Booting...");
+    lcd.print(FPSTR(msg_booting));
 #endif
   read_battery_voltage();
   if (!is_eeprom_correct()) {
@@ -114,7 +120,7 @@ void setup() {
   wdt_enable(WDTO_8S);
 #ifdef USE_SERIAL
   print_previous_state(state_eeprom);
-  Serial.println("UPS booted");
+  Serial.println(FPSTR(msg_booted));
 #endif
 #ifdef LCD
     lcd.clear();
@@ -123,7 +129,7 @@ void setup() {
     lcd.print(" 1 0 0 xxxx xxxx ");
     lcd.print(cursor);
     lcd.setCursor(0,3);
-    lcd.print("UPS booted");
+    lcd.print(FPSTR(msg_booted));
 #endif
 } 
 
