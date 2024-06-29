@@ -71,9 +71,10 @@ unsigned int delta_is_ok = 0;
 
 #ifdef LCD
 LiquidCrystal_I2C lcd(LCD_ADDR,  LCD_COLS, LCD_ROWS);
+char lrow[3][20] = {0};
 #endif
 
-/* 
+/*
  * без скидання MCUSR буде bootloop після спрацювання watchdog після включення живлення на чіпах PA & PB
  * що цікаво, після скидання сигналом RESET або у випадку чіпів P, такого ефекту нема.
  * Взагалі-то досить код із цієї функції помістити в функцію setup, але мануал на чіп радить так.
@@ -88,7 +89,7 @@ void clr_mcusr(void) {
 
 void setup() {
   byte state_eeprom = STATE_UNKNOWN;
-  int lcd_status = 0;
+  //int lcd_status = 0;
   PGM_P msg_booting = PSTR("Booting...");
   PGM_P msg_booted = PSTR("UPS booted");
 
@@ -100,13 +101,15 @@ void setup() {
   digitalWrite(4, HIGH);  //  inverter relay is inverted
 #ifdef USE_SERIAL
   Serial.begin(9600);
-  delay(500);
-  Serial.println(FPSTR(msg_booting));
 #endif
 #ifdef LCD
     lcd.init();
     lcd.backlight();
     lcd.print(FPSTR(msg_booting));
+#endif
+#ifdef USE_SERIAL
+  delay(500);
+  Serial.println(FPSTR(msg_booting));
 #endif
   read_battery_voltage();
   if (!is_eeprom_correct()) {
@@ -124,17 +127,23 @@ void setup() {
 #endif
 #ifdef LCD
     lcd.clear();
-    lcd.print(" L I C  Bt   Av   ^");
-    lcd.setCursor(0,1);
-    lcd.print(" 1 0 0 xxxx xxxx ");
-    lcd.print(cursor);
-    lcd.setCursor(0,3);
     lcd.print(FPSTR(msg_booted));
 #endif
-} 
+}
 
 void loop() {
   unsigned long current_timer = millis();
+  PGM_P msg_pwr_fail = PSTR("External power failed");
+  PGM_P msg_pwr_restore = PSTR("External power restored");
+  PGM_P msg_chgr_on = PSTR("Charger ON");
+  PGM_P msg_chgr_off = PSTR("Charger OFF");
+  PGM_P msg_chgr_on_b = PSTR("Charger ON - battery discharged (");
+  PGM_P msg_inv_on = PSTR("Inverter ON");
+  PGM_P msg_inv_off = PSTR("Inverter OFF");
+  PGM_P msg_chgr_off_over = PSTR("Charger OFF by overtime");
+  PGM_P msg_chgr_off_chgr = PSTR("Charger OFF - battery charged");
+  PGM_P msg_chgr_off_max = PSTR("Charger OFF - battery reached max. voltage");
+  // PGM_P msg_ = PSTR();
 
   if (current_timer < prev_timer) {  // timer overflown
     prev_timer = 0;
@@ -158,8 +167,8 @@ void loop() {
     last_change_state = 0;
     external_power_state_prev = external_power_state;
 #ifdef USE_SERIAL
-    if (external_power_state == LOW) Serial.println("External power failed");
-    else Serial.println("External power restored");
+    if (external_power_state == LOW) Serial.println(FPSTR(msg_pwr_fail));
+    else Serial.println(FPSTR(msg_pwr_restore));
 #endif
   }
 
@@ -170,14 +179,14 @@ void loop() {
       if (charger_state == HIGH) {
         digitalWrite(3, LOW);
 #ifdef USE_SERIAL
-        Serial.println("Charger OFF");
+        Serial.println(FPSTR(msg_chgr_off));
 #endif
       }
       if (inverter_state != LOW) {
         digitalWrite(4, LOW);
         EEPROM.update(EEPROM_STATE_BYTE, STATE_INVERTING);
 #ifdef USE_SERIAL
-        Serial.println("Inverter ON");
+        Serial.println(FPSTR(msg_inv_on));
 #endif
       }
     }
@@ -187,7 +196,7 @@ void loop() {
         digitalWrite(4, HIGH);
         battery_needs_charge = true;
 #ifdef USE_SERIAL
-        Serial.println("Inverter OFF");
+        Serial.println(FPSTR(msg_inv_off));
 #endif
       }
       if ((inverter_state == HIGH) and (charger_state == LOW) and (last_change_state > tics_before_charger_start)) {
@@ -197,7 +206,7 @@ void loop() {
           delta_is_ok = 0;
           EEPROM.update(EEPROM_STATE_BYTE, STATE_CHARGING);
 #ifdef USE_SERIAL
-          Serial.println("Charger ON");
+          Serial.println(FPSTR(msg_chgr_on));
 #endif
         } else {
           if (average_battery_voltage <= MIN_BATTERY_VOLTAGE) {
@@ -207,7 +216,7 @@ void loop() {
             delta_is_ok = 0;
             EEPROM.update(EEPROM_STATE_BYTE, STATE_CHARGING);
 #ifdef USE_SERIAL
-            Serial.print("Charger ON - battery discharged (");
+            Serial.print(msg_chgr_on_b);
             Serial.print(average_battery_voltage, 3);
             Serial.println(")");
 #endif
@@ -224,7 +233,7 @@ void loop() {
       battery_needs_charge = false;
       EEPROM.update(EEPROM_STATE_BYTE, STATE_STANDBY);
 #ifdef USE_SERIAL
-      Serial.println("Charger OFF by overtime");
+      Serial.println(FPSTR(msg_chgr_off_over));
 #endif
     }
   }
@@ -240,7 +249,7 @@ void loop() {
         battery_needs_charge = false;
         EEPROM.update(EEPROM_STATE_BYTE, STATE_STANDBY);
 #ifdef USE_SERIAL
-        Serial.println("Charger OFF - battery charged");
+        Serial.println(msg_chgr_off_chgr);
 #endif
       } else {
         if (average_battery_voltage >= MAX_BATTERY_VOLTAGE) {
@@ -248,13 +257,33 @@ void loop() {
           battery_needs_charge = false;
           EEPROM.update(EEPROM_STATE_BYTE, STATE_STANDBY);
 #ifdef USE_SERIAL
-          Serial.println("Charger OFF - battery reached max. voltage");
+          Serial.println(msg_chgr_off_max);
 #endif
         }
       }
     }
   }
+#ifdef LCD
+  refresh_lcd();
+#endif
+} // loop()
+
+
+#ifdef LCD
+void refresh_lcd(){
+    lcd.setCursor(0,0);
+    lcd.print(" L I C  Bt   Av   ^");
+    lcd.setCursor(0,1);
+    lcd.print(" 1 0 0 xxxx xxxx ");
+    lcd.print(cursor);
+    lcd.setCursor(0,3);
+    //lcd.print();
 }
+
+void fill_status_lcd(char *){
+
+}
+#endif
 
 void read_battery_voltage() {
   long dv = 0;
@@ -306,7 +335,7 @@ void read_battery_voltage() {
       cursor = 0;
     }
   }
-  /*  
+  /*
 #ifdef USE_SERIAL
   Serial.print(actual_battery_voltage,3);
   Serial.print(" ");
@@ -323,7 +352,7 @@ bool is_battery_charged() {
   for (byte i = 0; i < RAW_DATA_LENGTH; i++) {
     delta_sum += deltas[i];
   }
-  /*  
+  /*
 #ifdef USE_SERIAL
   Serial.print(delta_is_ok);
   Serial.print(" ");
