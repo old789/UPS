@@ -13,7 +13,8 @@
 #define LCD_ROWS 4
 #endif
 
-#define FPSTR(pstr) (const __FlashStringHelper*)(pstr)  // some compatibility with esp8266/esp32
+// some compatibility with esp8266/esp32
+#define FPSTR(pstr) (const __FlashStringHelper*)(pstr) 
 
 #define EEPROM_STATE_BYTE 0
 #define EEPROM_MARK_BYTE 0xa
@@ -89,9 +90,9 @@ void clr_mcusr(void) {
 
 void setup() {
   byte state_eeprom = STATE_UNKNOWN;
-  //int lcd_status = 0;
   PGM_P msg_booting = PSTR("Booting...");
   PGM_P msg_booted = PSTR("UPS booted");
+  //int lcd_status = 0;
 
   pinMode(A0, INPUT);
   pinMode(LED_BUILTIN, OUTPUT);
@@ -216,7 +217,7 @@ void loop() {
             delta_is_ok = 0;
             EEPROM.update(EEPROM_STATE_BYTE, STATE_CHARGING);
 #ifdef USE_SERIAL
-            Serial.print(msg_chgr_on_b);
+            Serial.print(FPSTR(msg_chgr_on_b));
             Serial.print(average_battery_voltage, 3);
             Serial.println(")");
 #endif
@@ -249,7 +250,7 @@ void loop() {
         battery_needs_charge = false;
         EEPROM.update(EEPROM_STATE_BYTE, STATE_STANDBY);
 #ifdef USE_SERIAL
-        Serial.println(msg_chgr_off_chgr);
+        Serial.println(FPSTR(msg_chgr_off_chgr));
 #endif
       } else {
         if (average_battery_voltage >= MAX_BATTERY_VOLTAGE) {
@@ -257,7 +258,7 @@ void loop() {
           battery_needs_charge = false;
           EEPROM.update(EEPROM_STATE_BYTE, STATE_STANDBY);
 #ifdef USE_SERIAL
-          Serial.println(msg_chgr_off_max);
+          Serial.println(FPSTR(msg_chgr_off_max));
 #endif
         }
       }
@@ -291,6 +292,7 @@ void read_battery_voltage() {
   byte i = 0;
   float avg = 0;
   float delta = 0;
+  PGM_P msg_bat_dis = PSTR("Battery disconnected");
 
   // there is oversampling
   for (i = 0; i < 10; i++)
@@ -302,7 +304,7 @@ void read_battery_voltage() {
 
   if (actual_battery_voltage < 3.0) {
 #ifdef USE_SERIAL
-    Serial.println("Battery disconnected");
+    Serial.println(FPSTR(msg_bat_dis));
 #endif
     battery_needs_charge = true;
     battery_needs_reload = true;
@@ -375,48 +377,58 @@ bool is_battery_charged() {
 }
 
 bool is_eeprom_correct() {
+  PGM_P msg_eeprom_ok = PSTR("EEPROM correct");
+  PGM_P msg_eeprom_bad = PSTR("EEPROM invalid");
   if (EEPROM.read(EEPROM_MARK_BYTE) == 0x55 and EEPROM.read(EEPROM_MARK_BYTE + 1) == 0xaa) {
 #ifdef USE_SERIAL
-    Serial.println("EEPROM correct");
+    Serial.println(FPSTR(msg_eeprom_ok));
 #endif
     return (true);
   }
 #ifdef USE_SERIAL
-  Serial.println("EEPROM invalid");
+  Serial.println(FPSTR(msg_eeprom_bad));
 #endif
   return (false);
 }
 
 bool eeprom_init() {
+  PGM_P msg_eeprom_init = PSTR("EEPROM initialized");
   for (byte i = 0; i < EEPROM_MARK_BYTE; i++) {
     EEPROM.update(i, 0);
   }
   EEPROM.update(EEPROM_MARK_BYTE, 0x55);
   EEPROM.update(EEPROM_MARK_BYTE + 1, 0xaa);
 #ifdef USE_SERIAL
-  Serial.println("EEPROM initialized");
+  Serial.println(FPSTR(msg_eeprom_init));
 #endif
   return (is_eeprom_correct());
 }
 
 #ifdef USE_SERIAL
 void print_previous_state(byte state_eeprom) {
-  Serial.print("Previous state is ");
+  PGM_P msg_prev_state = PSTR("Previous state is ");
+  PGM_P msg_st_unkn = PSTR("unknown");
+  PGM_P msg_st_stndb = PSTR("standby");
+  PGM_P msg_st_inv = PSTR("inverting");
+  PGM_P msg_st_chrg = PSTR("charging");
+  PGM_P msg_st_undef = PSTR("not defined (");
+  
+  Serial.print(FPSTR(msg_prev_state));
   switch (state_eeprom) {
     case STATE_UNKNOWN:
-      Serial.println("unknown");
+      Serial.println(FPSTR(msg_st_unkn));
       break;
     case STATE_STANDBY:
-      Serial.println("standby");
+      Serial.println(FPSTR(msg_st_stndb));
       break;
     case STATE_INVERTING:
-      Serial.println("inverting");
+      Serial.println(FPSTR(msg_st_inv));
       break;
     case STATE_CHARGING:
-      Serial.println("charging");
+      Serial.println(FPSTR(msg_st_chrg));
       break;
     default:
-      Serial.print("not defined (");
+      Serial.print(FPSTR(msg_st_undef));
       Serial.print(state_eeprom);
       Serial.println(")");
       break;
