@@ -13,8 +13,10 @@
 #define LCD_ROWS 4
 #endif
 
+#if defined ( USE_SERIAL ) || defined ( LCD )
 // some compatibility with esp8266/esp32
 #define FPSTR(pstr) (const __FlashStringHelper*)(pstr) 
+#endif
 
 #define EEPROM_STATE_BYTE 0
 #define EEPROM_MARK_BYTE 0xa
@@ -99,9 +101,10 @@ void clr_mcusr(void) {
 
 void setup() {
   byte state_eeprom = STATE_UNKNOWN;
+#if defined ( USE_SERIAL ) || defined ( LCD )
   PGM_P msg_booting = PSTR("Booting...");
   PGM_P msg_booted = PSTR("UPS booted");
-  //int lcd_status = 0;
+#endif
 
   pinMode(A0, INPUT);
   pinMode(LED_BUILTIN, OUTPUT);
@@ -136,13 +139,14 @@ void setup() {
   Serial.println(FPSTR(msg_booted));
 #endif
 #ifdef LCD
-    lcd.clear();
-    fill_msg_buf(msg_booted);
+  lcd.clear();
+  fill_msg_buf(msg_booted);
 #endif
 }
 
 void loop() {
   unsigned long current_timer = millis();
+#if defined ( USE_SERIAL ) || defined ( LCD ) 
   PGM_P msg_pwr_fail = PSTR("Ext.power failed");
   PGM_P msg_pwr_restore = PSTR("Ext.power restored");
   PGM_P msg_chgr_on = PSTR("Charger ON");
@@ -155,6 +159,7 @@ void loop() {
   PGM_P msg_chgr_off_max = PSTR("Charger OFF max.volt.");
   PGM_P msg_timer_overflown = PSTR("Timer overflown");
   // PGM_P msg_ = PSTR();
+#endif
 
   if (current_timer < prev_timer) {  // timer overflown
     prev_timer = 0;
@@ -356,7 +361,9 @@ void lcd_print_2nd_screen(){
   uint8_t i,j;
   for ( i = 0; i < LCD_ROWS; i++ ){
     j = i + 2;
-    if ( strlen( lrow[j] ) > 0 ) {
+    if ( strlen( lrow[j] ) == 0 ) {
+      return;
+    } else {
       lcd.setCursor(0,i);
       lcd.print(lrow[j]);
     }
@@ -377,13 +384,6 @@ void fill_msg_buf(PGM_P s){
   if ( c_lrow  < ( max_lrow - 1 ) ) {
     c_lrow++;
   }
-/*
-#ifdef USE_SERIAL
-  Serial.print(c_lrow);
-  Serial.print(" ");
-  Serial.println(max_lrow);
-#endif
-*/
 }
 #endif
 
@@ -393,7 +393,9 @@ void read_battery_voltage() {
   byte i = 0;
   float avg = 0;
   float delta = 0;
+#if defined ( USE_SERIAL ) || defined ( LCD ) 
   PGM_P msg_bat_dis = PSTR("Battery disconnected");
+#endif
 
   // there is oversampling
   for (i = 0; i < 10; i++)
@@ -481,8 +483,10 @@ bool is_battery_charged() {
 }
 
 bool is_eeprom_correct() {
+#if defined ( USE_SERIAL ) || defined ( LCD ) 
   PGM_P msg_eeprom_ok = PSTR("EEPROM correct");
   PGM_P msg_eeprom_bad = PSTR("EEPROM invalid");
+#endif
   if (EEPROM.read(EEPROM_MARK_BYTE) == 0x55 and EEPROM.read(EEPROM_MARK_BYTE + 1) == 0xaa) {
 #ifdef USE_SERIAL
     Serial.println(FPSTR(msg_eeprom_ok));
@@ -499,7 +503,9 @@ bool is_eeprom_correct() {
 }
 
 bool eeprom_init() {
+#if defined ( USE_SERIAL ) || defined ( LCD ) 
   PGM_P msg_eeprom_init = PSTR("EEPROM initialized");
+#endif
   for (byte i = 0; i < EEPROM_MARK_BYTE; i++) {
     EEPROM.update(i, 0);
   }
