@@ -72,7 +72,11 @@ unsigned int delta_is_ok = 0;
 
 #ifdef LCD
 LiquidCrystal_I2C lcd(LCD_ADDR,  LCD_COLS, LCD_ROWS);
-char lrow[3][20] = {0};
+const uint8_t max_lrow = 2;
+uint8_t c_lrow = 0;
+char lrow[max_lrow][LCD_COLS+1] = {0};
+
+void fill_msg_buf(PGM_P s);
 #endif
 
 /*
@@ -106,6 +110,7 @@ void setup() {
 #ifdef LCD
     lcd.init();
     lcd.backlight();
+    // lcd.noAutoscroll();
     lcd.print(FPSTR(msg_booting));
 #endif
 #ifdef USE_SERIAL
@@ -128,7 +133,7 @@ void setup() {
 #endif
 #ifdef LCD
     lcd.clear();
-    lcd.print(FPSTR(msg_booted));
+    fill_msg_buf(msg_booted);
 #endif
 }
 
@@ -171,6 +176,10 @@ void loop() {
     if (external_power_state == LOW) Serial.println(FPSTR(msg_pwr_fail));
     else Serial.println(FPSTR(msg_pwr_restore));
 #endif
+#ifdef LCD
+    if (external_power_state == LOW) fill_msg_buf(msg_pwr_fail);
+    else fill_msg_buf(msg_pwr_restore);
+#endif
   }
 
   inverter_state = digitalRead(4);
@@ -182,12 +191,18 @@ void loop() {
 #ifdef USE_SERIAL
         Serial.println(FPSTR(msg_chgr_off));
 #endif
+#ifdef LCD
+    fill_msg_buf(msg_chgr_off);
+#endif
       }
       if (inverter_state != LOW) {
         digitalWrite(4, LOW);
         EEPROM.update(EEPROM_STATE_BYTE, STATE_INVERTING);
 #ifdef USE_SERIAL
         Serial.println(FPSTR(msg_inv_on));
+#endif
+#ifdef LCD
+    fill_msg_buf(msg_inv_on);
 #endif
       }
     }
@@ -199,6 +214,9 @@ void loop() {
 #ifdef USE_SERIAL
         Serial.println(FPSTR(msg_inv_off));
 #endif
+#ifdef LCD
+    fill_msg_buf(msg_inv_off);
+#endif
       }
       if ((inverter_state == HIGH) and (charger_state == LOW) and (last_change_state > tics_before_charger_start)) {
         if (battery_needs_charge) {
@@ -208,6 +226,9 @@ void loop() {
           EEPROM.update(EEPROM_STATE_BYTE, STATE_CHARGING);
 #ifdef USE_SERIAL
           Serial.println(FPSTR(msg_chgr_on));
+#endif
+#ifdef LCD
+    fill_msg_buf(msg_chgr_on);
 #endif
         } else {
           if (average_battery_voltage <= MIN_BATTERY_VOLTAGE) {
@@ -220,6 +241,9 @@ void loop() {
             Serial.print(FPSTR(msg_chgr_on_b));
             Serial.print(average_battery_voltage, 3);
             Serial.println(")");
+#endif
+#ifdef LCD
+    fill_msg_buf(msg_chgr_on_b);
 #endif
           }
         }
@@ -235,6 +259,9 @@ void loop() {
       EEPROM.update(EEPROM_STATE_BYTE, STATE_STANDBY);
 #ifdef USE_SERIAL
       Serial.println(FPSTR(msg_chgr_off_over));
+#endif
+#ifdef LCD
+    fill_msg_buf(msg_chgr_off_over);
 #endif
     }
   }
@@ -252,6 +279,9 @@ void loop() {
 #ifdef USE_SERIAL
         Serial.println(FPSTR(msg_chgr_off_chgr));
 #endif
+#ifdef LCD
+    fill_msg_buf(msg_chgr_off_chgr);
+#endif
       } else {
         if (average_battery_voltage >= MAX_BATTERY_VOLTAGE) {
           digitalWrite(3, LOW);
@@ -259,6 +289,9 @@ void loop() {
           EEPROM.update(EEPROM_STATE_BYTE, STATE_STANDBY);
 #ifdef USE_SERIAL
           Serial.println(FPSTR(msg_chgr_off_max));
+#endif
+#ifdef LCD
+    fill_msg_buf(msg_chgr_off_max);
 #endif
         }
       }
@@ -272,17 +305,53 @@ void loop() {
 
 #ifdef LCD
 void refresh_lcd(){
+  PGM_P clearstr = PSTR("                    ");
     lcd.setCursor(0,0);
-    lcd.print(" L I C  Bt   Av   ^");
+    // lcd.clear();
+    lcd.print("L I C  Bt   Av   ^");
     lcd.setCursor(0,1);
-    lcd.print(" 1 0 0 xxxx xxxx ");
+    lcd.print(external_power_state);
+    lcd.print(" ");
+    lcd.print(inverter_state ^ HIGH);
+    lcd.print(" ");
+    lcd.print(charger_state);
+    lcd.print(" ");
+    lcd.print((int)(actual_battery_voltage * 100));
+    lcd.print(" ");
+    lcd.print((int)(average_battery_voltage * 100));
+    lcd.print(" ");
     lcd.print(cursor);
-    lcd.setCursor(0,3);
-    //lcd.print();
+    if ( strlen( lrow[0] ) > 0 ) { 
+      lcd.setCursor(0,2);
+      lcd.print(FPSTR(clearstr));
+      lcd.setCursor(0,2);
+      lcd.print(lrow[0]);
+      if ( strlen( lrow[1] ) > 0 ) {
+        lcd.setCursor(0,3);
+        lcd.print(FPSTR(clearstr));
+        lcd.setCursor(0,3);
+        lcd.print(lrow[1]);
+      }
+    }
 }
 
-void fill_status_lcd(char *){
-
+void fill_msg_buf(PGM_P s){
+  if ( c_lrow  == ( max_lrow - 1 ) ) {
+/*
+#ifdef USE_SERIAL
+  Serial.print(c_lrow);
+  Serial.print(" ");
+  Serial.println(max_lrow);
+#endif
+*/
+    memset( lrow[0], 0, sizeof(lrow[0]-1 ) );
+    strncpy( lrow[0], lrow[1], sizeof(lrow[0]) - 1 );
+    memset( lrow[1], 0, sizeof(lrow[1]) - 1 );
+    strncpy_P( lrow[1], s, sizeof(lrow[1]) - 1 );
+  }else{
+    strncpy_P( lrow[c_lrow], s, sizeof(lrow[c_lrow]) - 1 );
+    c_lrow++;
+  }
 }
 #endif
 
@@ -305,6 +374,9 @@ void read_battery_voltage() {
   if (actual_battery_voltage < 3.0) {
 #ifdef USE_SERIAL
     Serial.println(FPSTR(msg_bat_dis));
+#endif
+#ifdef LCD
+    fill_msg_buf(msg_bat_dis);
 #endif
     battery_needs_charge = true;
     battery_needs_reload = true;
@@ -388,6 +460,9 @@ bool is_eeprom_correct() {
 #ifdef USE_SERIAL
   Serial.println(FPSTR(msg_eeprom_bad));
 #endif
+#ifdef LCD
+    fill_msg_buf(msg_eeprom_bad);
+#endif
   return (false);
 }
 
@@ -400,6 +475,9 @@ bool eeprom_init() {
   EEPROM.update(EEPROM_MARK_BYTE + 1, 0xaa);
 #ifdef USE_SERIAL
   Serial.println(FPSTR(msg_eeprom_init));
+#endif
+#ifdef LCD
+    fill_msg_buf(msg_eeprom_init);
 #endif
   return (is_eeprom_correct());
 }
