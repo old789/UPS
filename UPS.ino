@@ -50,6 +50,9 @@ const int BITRESOLUTION = pow(2, 10 + NBITS);
 const float RR = (R2 / (R1 + R2));
 const int SAMPLES = (int)(pow(4, (float)NBITS) + 0.5);
 const int tics_between_battery_measure = (battery_measuring_period * (1000 / main_loop_delay));
+#ifdef LCD
+const int display_tics = ( 2 * (1000l / main_loop_delay));
+#endif
 
 byte external_power_state = HIGH;
 byte external_power_state_prev = HIGH;
@@ -72,9 +75,11 @@ unsigned int delta_is_ok = 0;
 
 #ifdef LCD
 LiquidCrystal_I2C lcd(LCD_ADDR,  LCD_COLS, LCD_ROWS);
-const uint8_t max_lrow = 2;
+const uint8_t max_lrow = 6;
 uint8_t c_lrow = 0;
 char lrow[max_lrow][LCD_COLS+1] = {0};
+uint8_t c_screen = 0;
+unsigned int current_display_tics = 0;
 
 void fill_msg_buf(PGM_P s);
 #endif
@@ -110,7 +115,6 @@ void setup() {
 #ifdef LCD
     lcd.init();
     lcd.backlight();
-    // lcd.noAutoscroll();
     lcd.print(FPSTR(msg_booting));
 #endif
 #ifdef USE_SERIAL
@@ -139,20 +143,24 @@ void setup() {
 
 void loop() {
   unsigned long current_timer = millis();
-  PGM_P msg_pwr_fail = PSTR("External power failed");
-  PGM_P msg_pwr_restore = PSTR("External power restored");
+  PGM_P msg_pwr_fail = PSTR("Ext.power failed");
+  PGM_P msg_pwr_restore = PSTR("Ext.power restored");
   PGM_P msg_chgr_on = PSTR("Charger ON");
   PGM_P msg_chgr_off = PSTR("Charger OFF");
-  PGM_P msg_chgr_on_b = PSTR("Charger ON - battery discharged (");
+  PGM_P msg_chgr_on_b = PSTR("Charger ON batt.low (");
   PGM_P msg_inv_on = PSTR("Inverter ON");
   PGM_P msg_inv_off = PSTR("Inverter OFF");
-  PGM_P msg_chgr_off_over = PSTR("Charger OFF by overtime");
-  PGM_P msg_chgr_off_chgr = PSTR("Charger OFF - battery charged");
-  PGM_P msg_chgr_off_max = PSTR("Charger OFF - battery reached max. voltage");
+  PGM_P msg_chgr_off_over = PSTR("Charger OFF overtime");
+  PGM_P msg_chgr_off_chgr = PSTR("Charger OFF charged");
+  PGM_P msg_chgr_off_max = PSTR("Charger OFF max.volt.");
+  PGM_P msg_timer_overflown = PSTR("Timer overflown");
   // PGM_P msg_ = PSTR();
 
   if (current_timer < prev_timer) {  // timer overflown
     prev_timer = 0;
+#ifdef LCD
+    fill_msg_buf(msg_timer_overflown);
+#endif
     return;
   }
 
@@ -298,45 +306,77 @@ void loop() {
     }
   }
 #ifdef LCD
-  refresh_lcd();
+  current_display_tics++;
+  if ( current_display_tics > display_tics ) {
+    refresh_lcd();
+    current_display_tics = 0;
+  }
 #endif
 } // loop()
 
 
 #ifdef LCD
 void refresh_lcd(){
-  PGM_P clearstr = PSTR("                    ");
-    lcd.setCursor(0,0);
-    // lcd.clear();
-    lcd.print("L I C  Bt   Av   ^");
-    lcd.setCursor(0,1);
-    lcd.print(external_power_state);
-    lcd.print(" ");
-    lcd.print(inverter_state ^ HIGH);
-    lcd.print(" ");
-    lcd.print(charger_state);
-    lcd.print(" ");
-    lcd.print((int)(actual_battery_voltage * 100));
-    lcd.print(" ");
-    lcd.print((int)(average_battery_voltage * 100));
-    lcd.print(" ");
-    lcd.print(cursor);
-    if ( strlen( lrow[0] ) > 0 ) { 
-      lcd.setCursor(0,2);
-      lcd.print(FPSTR(clearstr));
-      lcd.setCursor(0,2);
-      lcd.print(lrow[0]);
-      if ( strlen( lrow[1] ) > 0 ) {
-        lcd.setCursor(0,3);
-        lcd.print(FPSTR(clearstr));
-        lcd.setCursor(0,3);
-        lcd.print(lrow[1]);
-      }
+  lcd.clear();
+  if ( c_screen == 0 ) {
+    lcd_print_1st_screen();
+  } else {
+    lcd_print_2nd_screen();
+  }
+  if ( c_lrow > 1 ) {
+    c_screen = c_screen ^ 1;
+  } 
+}
+
+void lcd_print_1st_screen(){
+  lcd.print("L I C  Bt   Av   ^");
+  lcd.setCursor(0,1);
+  lcd.print(external_power_state);
+  lcd.print(" ");
+  lcd.print(inverter_state ^ HIGH);
+  lcd.print(" ");
+  lcd.print(charger_state);
+  lcd.print(" ");
+  lcd.print((int)(actual_battery_voltage * 100));
+  lcd.print(" ");
+  lcd.print((int)(average_battery_voltage * 100));
+  lcd.print(" ");
+  lcd.print(cursor);
+  if ( strlen( lrow[0] ) > 0 ) { 
+    lcd.setCursor(0,2);
+    lcd.print(lrow[0]);
+    if ( strlen( lrow[1] ) > 0 ) {
+      lcd.setCursor(0,3);
+      lcd.print(lrow[1]);
     }
+  }
+}
+
+void lcd_print_2nd_screen(){
+  uint8_t i,j;
+  for ( i = 0; i < LCD_ROWS; i++ ){
+    j = i + 2;
+    if ( strlen( lrow[j] ) > 0 ) {
+      lcd.setCursor(0,i);
+      lcd.print(lrow[j]);
+    }
+  }
 }
 
 void fill_msg_buf(PGM_P s){
-  if ( c_lrow  == ( max_lrow - 1 ) ) {
+  uint8_t i;
+  if ( c_lrow > 0 ) {
+    for ( i=c_lrow; i > 0; i-- ){
+      memset( lrow[i], 0, sizeof(lrow[i]-1 ) );
+      strncpy( lrow[i], lrow[i-1], sizeof(lrow[i]) - 1 );
+    }
+  }
+  memset( lrow[0], 0, sizeof(lrow[0]) - 1 );
+  strncpy_P( lrow[0], s, sizeof(lrow[0]) - 1 );
+  
+  if ( c_lrow  < ( max_lrow - 1 ) ) {
+    c_lrow++;
+  }
 /*
 #ifdef USE_SERIAL
   Serial.print(c_lrow);
@@ -344,14 +384,6 @@ void fill_msg_buf(PGM_P s){
   Serial.println(max_lrow);
 #endif
 */
-    memset( lrow[0], 0, sizeof(lrow[0]-1 ) );
-    strncpy( lrow[0], lrow[1], sizeof(lrow[0]) - 1 );
-    memset( lrow[1], 0, sizeof(lrow[1]) - 1 );
-    strncpy_P( lrow[1], s, sizeof(lrow[1]) - 1 );
-  }else{
-    strncpy_P( lrow[c_lrow], s, sizeof(lrow[c_lrow]) - 1 );
-    c_lrow++;
-  }
 }
 #endif
 
