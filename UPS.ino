@@ -53,7 +53,7 @@ const float RR = (R2 / (R1 + R2));
 const int SAMPLES = (int)(pow(4, (float)NBITS) + 0.5);
 const int tics_between_battery_measure = (battery_measuring_period * (1000 / main_loop_delay));
 #ifdef LCD
-const int display_tics = ( 2 * (1000l / main_loop_delay));
+const int display_tics = ( 5 * (1000l / main_loop_delay));
 #endif
 
 byte external_power_state = HIGH;
@@ -77,11 +77,13 @@ unsigned int delta_is_ok = 0;
 
 #ifdef LCD
 LiquidCrystal_I2C lcd(LCD_ADDR,  LCD_COLS, LCD_ROWS);
-const uint8_t max_lrow = 6;
+const uint8_t max_lrow = 4;
 uint8_t c_lrow = 0;
 char lrow[max_lrow][LCD_COLS+1] = {0};
 uint8_t c_screen = 0;
 unsigned int current_display_tics = 0;
+long delta_sum_min = 0;
+long delta_sum_max = 0;
 
 void fill_msg_buf(PGM_P s);
 #endif
@@ -236,6 +238,8 @@ void loop() {
           digitalWrite(3, HIGH);
           charger_working_tics = 0;
           delta_is_ok = 0;
+          delta_sum_max = 0;
+          delta_sum_min = 0;
           EEPROM.update(EEPROM_STATE_BYTE, STATE_CHARGING);
 #ifdef USE_SERIAL
           Serial.println(FPSTR(msg_chgr_on));
@@ -328,9 +332,9 @@ void refresh_lcd(){
   } else {
     lcd_print_2nd_screen();
   }
-  if ( c_lrow > 1 ) {
+  // if ( c_lrow > 1 ) {
     c_screen = c_screen ^ 1;
-  } 
+  // } 
 }
 
 void lcd_print_1st_screen(){
@@ -347,6 +351,7 @@ void lcd_print_1st_screen(){
   lcd.print((int)(average_battery_voltage * 100));
   lcd.print(" ");
   lcd.print(cursor);
+/*
   if ( strlen( lrow[0] ) > 0 ) { 
     lcd.setCursor(0,2);
     lcd.print(lrow[0]);
@@ -355,12 +360,20 @@ void lcd_print_1st_screen(){
       lcd.print(lrow[1]);
     }
   }
+*/
+  lcd.setCursor(0,2);
+  lcd.print("delta min ");
+  lcd.print(delta_sum_min);
+  lcd.setCursor(0,3);
+  lcd.print("delta max ");
+  lcd.print(delta_sum_max);
 }
 
 void lcd_print_2nd_screen(){
   uint8_t i,j;
   for ( i = 0; i < LCD_ROWS; i++ ){
-    j = i + 2;
+    // j = i + 2;
+    j = i;
     if ( strlen( lrow[j] ) == 0 ) {
       return;
     } else {
@@ -425,6 +438,8 @@ void read_battery_voltage() {
     average_battery_voltage = actual_battery_voltage;
     battery_needs_reload = false;
     avg_prev = dv;
+    delta_sum_max = 0;
+    delta_sum_min = 0;
   } else {
     raw_battery_level[cursor] = dv;
 
@@ -471,6 +486,11 @@ bool is_battery_charged() {
   Serial.println(delta_sum);
 #endif
 */
+  if ( delta_sum > delta_sum_max ) {
+    delta_sum_max = delta_sum;
+  } else if ( delta_sum < delta_sum_min ) {
+    delta_sum_min = delta_sum;
+  }
   if ((delta_sum < LOW_DELTA) or (delta_sum > HIGH_DELTA)) {
     delta_is_ok = 0;
     return (false);
