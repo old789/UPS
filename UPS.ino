@@ -74,6 +74,8 @@ int deltas[RAW_DATA_LENGTH];
 byte cursor = 0;
 float avg_prev = 0;
 unsigned int delta_is_ok = 0;
+float delta = 0;
+long delta_sum = 0;
 
 #ifdef LCD
 LiquidCrystal_I2C lcd(LCD_ADDR,  LCD_COLS, LCD_ROWS);
@@ -362,10 +364,12 @@ void lcd_print_1st_screen(){
   }
 */
   lcd.setCursor(0,2);
-  lcd.print("delta min ");
-  lcd.print(delta_sum_min);
+  lcd.print(delta);
+  lcd.print(" ");
+  lcd.print(delta_sum);
   lcd.setCursor(0,3);
-  lcd.print("delta max ");
+  lcd.print(delta_sum_min);
+  lcd.print(" ");
   lcd.print(delta_sum_max);
 }
 
@@ -405,7 +409,6 @@ void read_battery_voltage() {
   long bl = 0;
   byte i = 0;
   float avg = 0;
-  float delta = 0;
 #if defined ( USE_SERIAL ) || defined ( LCD ) 
   PGM_P msg_bat_dis = PSTR("Battery disconnected");
 #endif
@@ -470,7 +473,6 @@ void read_battery_voltage() {
 }
 
 bool is_battery_charged() {
-  long delta_sum = 0;
 
   for (byte i = 0; i < RAW_DATA_LENGTH; i++) {
     delta_sum += deltas[i];
