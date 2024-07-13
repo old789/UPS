@@ -366,6 +366,8 @@ void lcd_print_1st_screen(){
   lcd.setCursor(0,2);
   lcd.print((int)(delta * 1000 + 0.5));
   lcd.print(" ");
+  lcd.print(delta_is_ok);
+  lcd.print(" ");
   lcd.print(delta_sum);
   lcd.setCursor(0,3);
   lcd.print(delta_sum_min);
