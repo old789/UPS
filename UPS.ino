@@ -364,7 +364,7 @@ void lcd_print_1st_screen(){
   }
 */
   lcd.setCursor(0,2);
-  lcd.print(delta);
+  lcd.print((int)(delta * 1000 + 0.5));
   lcd.print(" ");
   lcd.print(delta_sum);
   lcd.setCursor(0,3);
@@ -473,6 +473,7 @@ void read_battery_voltage() {
 }
 
 bool is_battery_charged() {
+  delta_sum = 0;
 
   for (byte i = 0; i < RAW_DATA_LENGTH; i++) {
     delta_sum += deltas[i];
