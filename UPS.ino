@@ -30,7 +30,8 @@ const int main_loop_delay = 500;                   // ms
 const int iverter_start_delay = 2;                 // s
 const int iverter_stop_delay = 30;                 // s
 const int charger_start_delay = 180;               // s
-const int max_charger_work_time = (4 * 3600 * 3);  // s
+const int charge_measure_delay = (3600 * 2);       // s
+const int max_charger_work_time = (3600 * 3);      // s
 const int battery_measuring_period = 30;           // s
 const int delta_series_long = 20;                  // count of battery measurements
 
@@ -48,6 +49,7 @@ const int tics_before_inverter_start = (iverter_start_delay * (1000 / main_loop_
 const int tics_before_inverter_stop = (iverter_stop_delay * (1000 / main_loop_delay));
 const int max_charger_work_tics = (max_charger_work_time * (1000l / main_loop_delay));
 const int tics_before_charger_start = (charger_start_delay * (1000l / main_loop_delay));
+const int tics_before_measurement_start = (charge_measure_delay * (1000l / main_loop_delay));
 const int BITRESOLUTION = pow(2, 10 + NBITS);
 const float RR = (R2 / (R1 + R2));
 const int SAMPLES = (int)(pow(4, (float)NBITS) + 0.5);
@@ -84,8 +86,6 @@ uint8_t c_lrow = 0;
 char lrow[max_lrow][LCD_COLS+1] = {0};
 uint8_t c_screen = 0;
 unsigned int current_display_tics = 0;
-long delta_sum_min = 0;
-long delta_sum_max = 0;
 
 void fill_msg_buf(PGM_P s);
 #endif
@@ -240,8 +240,6 @@ void loop() {
           digitalWrite(3, HIGH);
           charger_working_tics = 0;
           delta_is_ok = 0;
-          delta_sum_max = 0;
-          delta_sum_min = 0;
           EEPROM.update(EEPROM_STATE_BYTE, STATE_CHARGING);
 #ifdef USE_SERIAL
           Serial.println(FPSTR(msg_chgr_on));
@@ -291,7 +289,7 @@ void loop() {
     last_battery_measure = 0;
     read_battery_voltage();
     if (charger_state == HIGH) {
-      if (is_battery_charged()) {
+      if ( (charger_working_tics > tics_before_measurement_start) && is_battery_charged() ) {
         digitalWrite(3, LOW);
         battery_needs_charge = false;
         EEPROM.update(EEPROM_STATE_BYTE, STATE_STANDBY);
@@ -299,7 +297,7 @@ void loop() {
         Serial.println(FPSTR(msg_chgr_off_chgr));
 #endif
 #ifdef LCD
-    fill_msg_buf(msg_chgr_off_chgr);
+        fill_msg_buf(msg_chgr_off_chgr);
 #endif
       } else {
         if (average_battery_voltage >= MAX_BATTERY_VOLTAGE) {
@@ -310,7 +308,7 @@ void loop() {
           Serial.println(FPSTR(msg_chgr_off_max));
 #endif
 #ifdef LCD
-    fill_msg_buf(msg_chgr_off_max);
+          fill_msg_buf(msg_chgr_off_max);
 #endif
         }
       }
@@ -334,57 +332,40 @@ void refresh_lcd(){
   } else {
     lcd_print_2nd_screen();
   }
-  // if ( c_lrow > 1 ) {
-    c_screen = c_screen ^ 1;
-  // } 
+  c_screen = c_screen ^ 1;
 }
 
 void lcd_print_1st_screen(){
+  char stri[21] = {0};
+  sprintf( stri, "%u %u %u %04u %04u %02u", external_power_state, (inverter_state ^ HIGH), charger_state,
+    (int)(actual_battery_voltage * 100), (int)(average_battery_voltage * 100), cursor );
   lcd.print("L I C  Bt   Av   ^");
   lcd.setCursor(0,1);
-  lcd.print(external_power_state);
-  lcd.print(" ");
-  lcd.print(inverter_state ^ HIGH);
-  lcd.print(" ");
-  lcd.print(charger_state);
-  lcd.print(" ");
-  lcd.print((int)(actual_battery_voltage * 100));
-  lcd.print(" ");
-  lcd.print((int)(average_battery_voltage * 100));
-  lcd.print(" ");
-  lcd.print(cursor);
-/*
-  if ( strlen( lrow[0] ) > 0 ) { 
-    lcd.setCursor(0,2);
-    lcd.print(lrow[0]);
-    if ( strlen( lrow[1] ) > 0 ) {
-      lcd.setCursor(0,3);
-      lcd.print(lrow[1]);
-    }
-  }
-*/
+  lcd.print(stri);
   lcd.setCursor(0,2);
-  lcd.print((int)(delta * 1000 + 0.5));
-  lcd.print(" ");
-  lcd.print(delta_is_ok);
-  lcd.print(" ");
-  lcd.print(delta_sum);
+  if (charger_state == HIGH) {
+      if ( charger_working_tics < tics_before_measurement_start ){
+        lcd.print( (tics_before_measurement_start - charger_working_tics) / (1000l / main_loop_delay) );
+      }else{
+        lcd.print("measurement");
+      }
+  } else {
+    lcd.print("rest");
+  }
   lcd.setCursor(0,3);
-  lcd.print(delta_sum_min);
-  lcd.print(" ");
-  lcd.print(delta_sum_max);
+  memset( stri, 0, sizeof(stri) - 1 );
+  sprintf( stri,  "%d %u %d", (int)(delta * 1000 + 0.5), delta_is_ok, delta_sum );
+  lcd.print(stri);
 }
 
 void lcd_print_2nd_screen(){
-  uint8_t i,j;
+  uint8_t i;
   for ( i = 0; i < LCD_ROWS; i++ ){
-    // j = i + 2;
-    j = i;
-    if ( strlen( lrow[j] ) == 0 ) {
+    if ( strlen( lrow[i] ) == 0 ) {
       return;
     } else {
       lcd.setCursor(0,i);
-      lcd.print(lrow[j]);
+      lcd.print(lrow[i]);
     }
   }
 }
@@ -443,9 +424,7 @@ void read_battery_voltage() {
     average_battery_voltage = actual_battery_voltage;
     battery_needs_reload = false;
     avg_prev = dv;
-    delta_sum_max = 0;
-    delta_sum_min = 0;
-  } else {
+   } else {
     raw_battery_level[cursor] = dv;
 
     for (i = 0; i < RAW_DATA_LENGTH; i++) {
@@ -491,11 +470,6 @@ bool is_battery_charged() {
   Serial.println(delta_sum);
 #endif
 */
-  if ( delta_sum > delta_sum_max ) {
-    delta_sum_max = delta_sum;
-  } else if ( delta_sum < delta_sum_min ) {
-    delta_sum_min = delta_sum;
-  }
   if ((delta_sum < LOW_DELTA) or (delta_sum > HIGH_DELTA)) {
     delta_is_ok = 0;
     return (false);
