@@ -7,10 +7,15 @@
 #ifdef LCD
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
+#include <pcf8574.h>
 // LCD geometry
 #define LCD_ADDR 0x27
 #define LCD_COLS 20
 #define LCD_ROWS 4
+#define EXP_ADDR 0x25
+#define CURRENT_SENSOR 0
+#define BTN_RED 1
+#define BTN_GREEN 2
 #endif
 
 #if defined ( USE_SERIAL ) || defined ( LCD )
@@ -87,6 +92,8 @@ char lrow[max_lrow][LCD_COLS+1] = {0};
 uint8_t c_screen = 0;
 unsigned int current_display_tics = 0;
 
+PCF8574 ex0(EXP_ADDR);
+
 void fill_msg_buf(PGM_P s);
 #endif
 
@@ -123,6 +130,9 @@ void setup() {
     lcd.init();
     lcd.backlight();
     lcd.print(FPSTR(msg_booting));
+    for( uint8_t i=0; i < 8; i++ ) {
+      pinMode(ex0, i, INPUT_PULLUP);
+    }
 #endif
 #ifdef USE_SERIAL
   delay(500);
