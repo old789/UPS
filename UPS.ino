@@ -12,10 +12,10 @@
 #define LCD_ADDR 0x27
 #define LCD_COLS 20
 #define LCD_ROWS 4
-#define EXP_ADDR 0x25
-#define CURRENT_SENSOR 0
-#define BTN_RED 1
-#define BTN_GREEN 2
+#define EXP_ADDR 0x22
+#define CURRENT_SENSOR 7
+#define BTN_RED 5
+#define BTN_GREEN 6
 #endif
 
 #if defined ( USE_SERIAL ) || defined ( LCD )
@@ -61,6 +61,7 @@ const int SAMPLES = (int)(pow(4, (float)NBITS) + 0.5);
 const int tics_between_battery_measure = (battery_measuring_period * (1000 / main_loop_delay));
 #ifdef LCD
 const int display_tics = ( 5 * (1000l / main_loop_delay));
+const int debounce_delay = 200; // millis
 #endif
 
 byte external_power_state = HIGH;
@@ -93,6 +94,15 @@ uint8_t c_screen = 0;
 unsigned int current_display_tics = 0;
 
 PCF8574 ex0(EXP_ADDR);
+bool is_pcf8574_ready = true;
+uint8_t last_red_button_state = LOW;
+uint8_t last_grn_button_state = LOW;
+int8_t curr_red_button_state = LOW;
+int8_t curr_grn_button_state = LOW;
+bool is_red_button_pressed = false;
+bool is_grn_button_pressed = false;
+unsigned long last_red_debounce_time = 0;
+unsigned long last_grn_debounce_time = 0;
 
 void fill_msg_buf(PGM_P s);
 #endif
@@ -183,6 +193,45 @@ void loop() {
     return;
   }
 
+#ifdef LCD
+  if ( is_pcf8574_ready ) {
+    curr_red_button_state = digitalRead( ex0, BTN_RED );
+    if ( curr_red_button_state < 0 ) {
+      is_pcf8574_ready = false;
+      fill_msg_buf("IO expander not ready");
+      return;
+    }      
+    if ( curr_red_button_state != last_red_button_state ) {
+      last_red_debounce_time = millis();
+    }
+    if ( (millis() - last_red_debounce_time) > debounce_delay ) {
+      if ( curr_red_button_state == HIGH ) {
+        is_red_button_pressed = false;
+        fill_msg_buf(PSTR("Red button released"));
+      } else {
+        is_red_button_pressed = true;
+        fill_msg_buf(PSTR("Red button pressed"));
+      }
+    }
+    last_red_button_state = curr_red_button_state;
+  
+    curr_grn_button_state = digitalRead( ex0, BTN_GREEN );
+    if ( curr_grn_button_state != last_grn_button_state ) {
+      last_grn_debounce_time = millis();
+    }
+    if ( (millis() - last_grn_debounce_time) > debounce_delay ) {
+      if ( curr_grn_button_state == HIGH ) {
+        is_grn_button_pressed = false;
+        fill_msg_buf(PSTR("Green button released"));
+      } else {
+        is_grn_button_pressed = true;
+        fill_msg_buf(PSTR("Green button pressed"));
+      }
+    }
+  }
+  last_grn_button_state = curr_grn_button_state;
+#endif
+  
   if ((current_timer - prev_timer) < main_loop_delay) {
     return;
   }
