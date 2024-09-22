@@ -7,7 +7,8 @@
 #ifdef LCD
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
-#include <pcf8574.h>
+#include <pcf8574.h>   // https://github.com/MSZ98/pcf8574.git
+#include "src/OneButton/OneButton.h"  // https://github.com/mathertel/OneButton , modified for PCF8574 expander
 // LCD geometry
 #define LCD_ADDR 0x27
 #define LCD_COLS 20
@@ -61,7 +62,6 @@ const int SAMPLES = (int)(pow(4, (float)NBITS) + 0.5);
 const int tics_between_battery_measure = (battery_measuring_period * (1000 / main_loop_delay));
 #ifdef LCD
 const int display_tics = ( 5 * (1000l / main_loop_delay));
-const int debounce_delay = 200; // millis
 #endif
 
 byte external_power_state = HIGH;
@@ -95,14 +95,9 @@ unsigned int current_display_tics = 0;
 
 PCF8574 ex0(EXP_ADDR);
 bool is_pcf8574_ready = true;
-uint8_t last_red_button_state = LOW;
-uint8_t last_grn_button_state = LOW;
-int8_t curr_red_button_state = LOW;
-int8_t curr_grn_button_state = LOW;
-bool is_red_button_pressed = false;
-bool is_grn_button_pressed = false;
-unsigned long last_red_debounce_time = 0;
-unsigned long last_grn_debounce_time = 0;
+
+OneButton button_red(BTN_RED);
+OneButton button_grn(BTN_GREEN);
 
 void fill_msg_buf(PGM_P s);
 #endif
@@ -182,6 +177,7 @@ void loop() {
   PGM_P msg_chgr_off_chgr = PSTR("Charger OFF charged");
   PGM_P msg_chgr_off_max = PSTR("Charger OFF max.volt.");
   PGM_P msg_timer_overflown = PSTR("Timer overflown");
+  PGM_P msg_io_expander_error = PSTR("IO expander not ready");
   // PGM_P msg_ = PSTR();
 #endif
 
@@ -195,41 +191,15 @@ void loop() {
 
 #ifdef LCD
   if ( is_pcf8574_ready ) {
-    curr_red_button_state = digitalRead( ex0, BTN_RED );
-    if ( curr_red_button_state < 0 ) {
+    if ( ex0.read() < 0 ) {
       is_pcf8574_ready = false;
-      fill_msg_buf("IO expander not ready");
+      fill_msg_buf( msg_io_expander_error );
       return;
-    }      
-    if ( curr_red_button_state != last_red_button_state ) {
-      last_red_debounce_time = millis();
-    }
-    if ( (millis() - last_red_debounce_time) > debounce_delay ) {
-      if ( curr_red_button_state == HIGH ) {
-        is_red_button_pressed = false;
-        fill_msg_buf(PSTR("Red button released"));
-      } else {
-        is_red_button_pressed = true;
-        fill_msg_buf(PSTR("Red button pressed"));
-      }
-    }
-    last_red_button_state = curr_red_button_state;
-  
-    curr_grn_button_state = digitalRead( ex0, BTN_GREEN );
-    if ( curr_grn_button_state != last_grn_button_state ) {
-      last_grn_debounce_time = millis();
-    }
-    if ( (millis() - last_grn_debounce_time) > debounce_delay ) {
-      if ( curr_grn_button_state == HIGH ) {
-        is_grn_button_pressed = false;
-        fill_msg_buf(PSTR("Green button released"));
-      } else {
-        is_grn_button_pressed = true;
-        fill_msg_buf(PSTR("Green button pressed"));
-      }
+    } else {
+      button_red.tick();
+      button_grn.tick();
     }
   }
-  last_grn_button_state = curr_grn_button_state;
 #endif
   
   if ((current_timer - prev_timer) < main_loop_delay) {
