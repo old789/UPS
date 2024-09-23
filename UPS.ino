@@ -138,6 +138,8 @@ void setup() {
     for( uint8_t i=0; i < 8; i++ ) {
       pinMode(ex0, i, INPUT_PULLUP);
     }
+    button_red.attachClick(click_red);
+    button_grn.attachClick(click_grn);
 #endif
 #ifdef USE_SERIAL
   delay(500);
@@ -399,6 +401,16 @@ void lcd_print_2nd_screen(){
   }
 }
 
+void click_red() {
+  PGM_P msg_red_button_click = PSTR("Red button clicked");
+  fill_msg_buf(msg_red_button_click);
+}
+
+void click_grn() {
+  PGM_P msg_grn_button_click = PSTR("Green button clicked");
+  fill_msg_buf(msg_grn_button_click);
+}
+
 void fill_msg_buf(PGM_P s){
   uint8_t i;
   if ( c_lrow > 0 ) {
@@ -413,6 +425,10 @@ void fill_msg_buf(PGM_P s){
   if ( c_lrow  < ( max_lrow - 1 ) ) {
     c_lrow++;
   }
+}
+
+int stub_digital_read(int pin){ // IDK how to make this properly
+  return(digitalRead( ex0, pin ));
 }
 #endif
 

@@ -34,6 +34,7 @@ extern "C" {
   typedef void (*parameterizedCallbackFunction)(void *);
 }
 
+extern int stub_digital_read(int);
 
 class OneButton {
 public:
@@ -206,7 +207,6 @@ public:
   bool isLongPressed() const {
     return _state == OCS_PRESS;
   };
-
 
 private:
   int _pin = -1;                 // hardware pin number.
