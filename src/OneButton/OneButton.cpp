@@ -205,7 +205,7 @@ bool OneButton::debounce(const bool value) {
  */
 void OneButton::tick(void) {
   if (_pin >= 0) {
-    _fsm(debounce(::stub_digital_read(_pin) == _buttonPressed));
+    _fsm(debounce(::digital_read_wrapper(_pin) == _buttonPressed));
   }
 }  // tick()
 

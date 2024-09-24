@@ -34,7 +34,7 @@ extern "C" {
   typedef void (*parameterizedCallbackFunction)(void *);
 }
 
-extern int stub_digital_read(int);
+extern int digital_read_wrapper(int);
 
 class OneButton {
 public:

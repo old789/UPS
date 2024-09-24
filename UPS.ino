@@ -92,6 +92,8 @@ uint8_t c_lrow = 0;
 char lrow[max_lrow][LCD_COLS+1] = {0};
 uint8_t c_screen = 0;
 unsigned int current_display_tics = 0;
+bool warn_charger_off = false;
+bool warn_charger_on = false;
 
 PCF8574 ex0(EXP_ADDR);
 bool is_pcf8574_ready = true;
@@ -364,6 +366,10 @@ void refresh_lcd(){
     lcd_print_2nd_screen();
   }
   c_screen = c_screen ^ 1;
+  if ( warn_charger_off ) 
+    warn_charger_off = false;
+  if ( warn_charger_on )
+    warn_charger_on = false;
 }
 
 void lcd_print_1st_screen(){
@@ -401,14 +407,38 @@ void lcd_print_2nd_screen(){
   }
 }
 
+void lcd_print_warning(PGM_P s){
+  char buf[21] = {0};
+  strncpy_P( buf, s, sizeof(buf) - 1 );
+  lcd.clear();
+  lcd.setCursor(0,1);
+  lcd.print(buf);
+  current_display_tics = 0;
+}
+
 void click_red() {
-  PGM_P msg_red_button_click = PSTR("Red button clicked");
-  fill_msg_buf(msg_red_button_click);
+  PGM_P msg_charger_now_off = PSTR("Charger off already");
+  PGM_P msg_charger_will_off = PSTR("Long press 4 confirm");
+  if ( charger_state == LOW) {
+    lcd_print_warning(msg_charger_now_off);
+  } else {
+    lcd_print_warning(msg_charger_will_off);
+    warn_charger_off = true;
+  }
 }
 
 void click_grn() {
-  PGM_P msg_grn_button_click = PSTR("Green button clicked");
-  fill_msg_buf(msg_grn_button_click);
+  PGM_P msg_charger_now_on = PSTR("Charger on already");
+  PGM_P msg_charger_denied = PSTR("Charger denied");
+  PGM_P msg_charger_will_on = PSTR("Long press 4 confirm");
+  if ( external_power_state == LOW or inverter_state == LOW ) {
+    lcd_print_warning(msg_charger_denied);
+  } else if ( charger_state == HIGH ) {
+    lcd_print_warning(msg_charger_now_on);
+  } else {
+    lcd_print_warning(msg_charger_will_on);
+    warn_charger_on = true;
+  }
 }
 
 void fill_msg_buf(PGM_P s){
@@ -427,7 +457,7 @@ void fill_msg_buf(PGM_P s){
   }
 }
 
-int stub_digital_read(int pin){ // IDK how to make this properly
+int digital_read_wrapper(int pin){ // IDK how to make this properly
   return(digitalRead( ex0, pin ));
 }
 #endif
