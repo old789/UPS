@@ -142,7 +142,11 @@ void setup() {
     }
     button_red.attachClick(click_red);
     button_grn.attachClick(click_grn);
-#endif
+    button_red.attachLongPressStart(lstart_red);
+    button_grn.attachLongPressStart(lstart_grn);
+    button_red.attachLongPressStop(lstop);
+    button_grn.attachLongPressStop(lstop);
+    #endif
 #ifdef USE_SERIAL
   delay(500);
   Serial.println(FPSTR(msg_booting));
@@ -439,6 +443,62 @@ void click_grn() {
     lcd_print_warning(msg_charger_will_on);
     warn_charger_on = true;
   }
+}
+
+void lstart_red() {
+  PGM_P msg_charger_now_off = PSTR("Charger off already");
+  PGM_P msg_charger_warn = PSTR("         NO");
+  PGM_P msg_charger_goes_off = PSTR("Charger goes OFF");
+  PGM_P msg_chgr_off = PSTR("Charger OFF manually");
+  if ( ! warn_charger_off ) {
+    lcd_print_warning(msg_charger_warn);
+  } else {
+    if ( charger_state == LOW) {
+      lcd_print_warning(msg_charger_now_off);
+    } else {
+      lcd_print_warning(msg_charger_goes_off);
+      digitalWrite(3, LOW);
+      battery_needs_charge = false;
+      EEPROM.update(EEPROM_STATE_BYTE, STATE_STANDBY);
+#ifdef USE_SERIAL
+      Serial.println(FPSTR(msg_chgr_off));
+#endif
+      fill_msg_buf(msg_chgr_off);
+    }
+  }
+}
+
+void lstart_grn() {
+  PGM_P msg_charger_now_on = PSTR("Charger on already");
+  PGM_P msg_charger_warn = PSTR("         NO");
+  PGM_P msg_charger_denied = PSTR("Charger denied");
+  PGM_P msg_charger_goes_on = PSTR("Charger goes ON");
+  PGM_P msg_chgr_on = PSTR("Charger ON manually");
+  if ( ! warn_charger_on ) {
+    lcd_print_warning(msg_charger_warn);
+  } else {  
+    if ( external_power_state == LOW or inverter_state == LOW ) {
+      lcd_print_warning(msg_charger_denied);
+    } else if ( charger_state == HIGH ) {
+      lcd_print_warning(msg_charger_now_on);
+    } else {
+      digitalWrite(3, HIGH);
+      battery_needs_charge = true;
+      charger_working_tics = 0;
+      delta_is_ok = 0;
+      EEPROM.update(EEPROM_STATE_BYTE, STATE_CHARGING);
+#ifdef USE_SERIAL
+      Serial.println(FPSTR(msg_chgr_on));
+#endif
+      fill_msg_buf(msg_chgr_on);
+    }
+  }
+}
+
+void lstop(){
+  current_display_tics = 0;
+  c_screen = 0;
+  refresh_lcd();
 }
 
 void fill_msg_buf(PGM_P s){
