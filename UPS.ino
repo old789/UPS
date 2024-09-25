@@ -94,6 +94,7 @@ uint8_t c_screen = 0;
 unsigned int current_display_tics = 0;
 bool warn_charger_off = false;
 bool warn_charger_on = false;
+uint8_t charger_mode = 0;
 
 PCF8574 ex0(EXP_ADDR);
 bool is_pcf8574_ready = true;
@@ -141,7 +142,8 @@ void setup() {
       pinMode(ex0, i, INPUT_PULLUP);
     }
     button_red.attachClick(click_red);
-    button_grn.attachClick(click_grn);
+    button_grn.attachClick(click_grn_single);
+    button_grn.attachDoubleClick(click_grn_double);
     button_red.attachLongPressStart(lstart_red);
     button_grn.attachLongPressStart(lstart_grn);
     button_red.attachLongPressStop(lstop);
@@ -431,7 +433,15 @@ void click_red() {
   }
 }
 
-void click_grn() {
+void click_grn_single() {
+  click_grn(1);
+}
+
+void click_grn_double() {
+  click_grn(2);
+}
+
+void click_grn(uint8_t cl) {
   PGM_P msg_charger_now_on = PSTR("Charger on already");
   PGM_P msg_charger_denied = PSTR("Charger denied");
   PGM_P msg_charger_will_on = PSTR("Long press 4 confirm");
@@ -442,6 +452,7 @@ void click_grn() {
   } else {
     lcd_print_warning(msg_charger_will_on);
     warn_charger_on = true;
+    charger_mode = cl;
   }
 }
 
@@ -459,6 +470,7 @@ void lstart_red() {
       lcd_print_warning(msg_charger_goes_off);
       digitalWrite(3, LOW);
       battery_needs_charge = false;
+      charger_mode = 0;
       EEPROM.update(EEPROM_STATE_BYTE, STATE_STANDBY);
 #ifdef USE_SERIAL
       Serial.println(FPSTR(msg_chgr_off));
@@ -473,7 +485,8 @@ void lstart_grn() {
   PGM_P msg_charger_warn = PSTR("         NO");
   PGM_P msg_charger_denied = PSTR("Charger denied");
   PGM_P msg_charger_goes_on = PSTR("Charger goes ON");
-  PGM_P msg_chgr_on = PSTR("Charger ON manually");
+  PGM_P msg_chgr_on1 = PSTR("Charger ON autoOff");
+  PGM_P msg_chgr_on2 = PSTR("Charger ON contin.");
   if ( ! warn_charger_on ) {
     lcd_print_warning(msg_charger_warn);
   } else {  
@@ -482,15 +495,23 @@ void lstart_grn() {
     } else if ( charger_state == HIGH ) {
       lcd_print_warning(msg_charger_now_on);
     } else {
+      lcd_print_warning(msg_charger_goes_on);
       digitalWrite(3, HIGH);
       battery_needs_charge = true;
       charger_working_tics = 0;
       delta_is_ok = 0;
-      EEPROM.update(EEPROM_STATE_BYTE, STATE_CHARGING);
+      if ( charger_mode == 2 ) {
 #ifdef USE_SERIAL
-      Serial.println(FPSTR(msg_chgr_on));
+        Serial.println(FPSTR(msg_chgr_on2));
 #endif
-      fill_msg_buf(msg_chgr_on);
+        fill_msg_buf(msg_chgr_on2);
+      } else {
+        EEPROM.update(EEPROM_STATE_BYTE, STATE_CHARGING);
+#ifdef USE_SERIAL
+      Serial.println(FPSTR(msg_chgr_on1));
+#endif
+        fill_msg_buf(msg_chgr_on1);
+      }
     }
   }
 }
