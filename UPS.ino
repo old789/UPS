@@ -36,6 +36,7 @@ const int main_loop_delay = 500;                   // ms
 const int iverter_start_delay = 2;                 // s
 const int iverter_stop_delay = 30;                 // s
 const int charger_start_delay = 180;               // s
+const int current_sensor_start_delay = 60;         // s
 const int charge_measure_delay = (3600 * 2);       // s
 const int max_charger_work_time = (3600 * 3);      // s
 const int battery_measuring_period = 30;           // s
@@ -61,6 +62,7 @@ const float RR = (R2 / (R1 + R2));
 const int SAMPLES = (int)(pow(4, (float)NBITS) + 0.5);
 const int tics_between_battery_measure = (battery_measuring_period * (1000 / main_loop_delay));
 #ifdef LCD
+const int tics_before_current_sensor_start = ( current_sensor_start_delay * (1000l / main_loop_delay));
 const int display_tics = ( 5 * (1000l / main_loop_delay));
 #endif
 
@@ -188,7 +190,8 @@ void loop() {
   PGM_P msg_chgr_off_max = PSTR("Charger OFF max.volt.");
   PGM_P msg_timer_overflown = PSTR("Timer overflown");
   PGM_P msg_io_expander_error = PSTR("IO expander not ready");
-  // PGM_P msg_ = PSTR();
+  PGM_P msg_chgr_off_sensor = PSTR("Charger OFF by sens");
+ // PGM_P msg_ = PSTR();
 #endif
 
   if (current_timer < prev_timer) {  // timer overflown
@@ -309,6 +312,20 @@ void loop() {
 
   if (charger_state == HIGH) {
     charger_working_tics++;
+#ifdef LCD
+    if ( ( charger_working_tics > tics_before_current_sensor_start ) and ( charger_mode != 2 ) ){
+      if ( digitalRead( ex0, CURRENT_SENSOR ) == HIGH ){
+        digitalWrite(3, LOW);
+        battery_needs_charge = false;
+        EEPROM.update(EEPROM_STATE_BYTE, STATE_STANDBY);
+#ifdef USE_SERIAL
+        Serial.println(FPSTR(msg_chgr_off_sensor));
+#endif
+        fill_msg_buf(msg_chgr_off_sensor);
+      }
+    }
+#endif
+        
     if (charger_working_tics > max_charger_work_tics) {
       digitalWrite(3, LOW);
       battery_needs_charge = false;
