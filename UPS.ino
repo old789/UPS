@@ -37,6 +37,7 @@ const int iverter_start_delay = 2;                 // s
 const int iverter_stop_delay = 30;                 // s
 const int charger_start_delay = 180;               // s
 const int current_sensor_start_delay = 60;         // s
+const int current_sensor_charger_off_delay = 60;   // s
 const int charge_measure_delay = (3600 * 2);       // s
 const int max_charger_work_time = (3600 * 3);      // s
 const int battery_measuring_period = 30;           // s
@@ -63,6 +64,7 @@ const int SAMPLES = (int)(pow(4, (float)NBITS) + 0.5);
 const int tics_between_battery_measure = (battery_measuring_period * (1000 / main_loop_delay));
 #ifdef LCD
 const int tics_before_current_sensor_start = ( current_sensor_start_delay * (1000l / main_loop_delay));
+const int ticks_before_chrg_off = ( current_sensor_charger_off_delay * (1000l / main_loop_delay));
 const int display_tics = ( 5 * (1000l / main_loop_delay));
 #endif
 
@@ -74,6 +76,7 @@ unsigned int charger_state = 0;
 unsigned int last_change_state = 0;
 unsigned int charger_working_tics = 0;
 unsigned int last_battery_measure = 0;
+unsigned int current_ticks_before_chrg_off = 0;
 bool battery_needs_charge = false;
 bool battery_needs_reload = true;
 float actual_battery_voltage = 0.0;
@@ -97,6 +100,8 @@ unsigned int current_display_tics = 0;
 bool warn_charger_off = false;
 bool warn_charger_on = false;
 uint8_t charger_mode = 0;
+int8_t current_sensor_state = HIGH;
+int8_t current_sensor_state_prev = HIGH;
 
 PCF8574 ex0(EXP_ADDR);
 bool is_pcf8574_ready = true;
@@ -191,6 +196,9 @@ void loop() {
   PGM_P msg_timer_overflown = PSTR("Timer overflown");
   PGM_P msg_io_expander_error = PSTR("IO expander not ready");
   PGM_P msg_chgr_off_sensor = PSTR("Charger OFF by sens");
+  PGM_P msg_current_detect = PSTR("Chr. current detect.");
+  PGM_P msg_current_off = PSTR("Chr. current off");
+
  // PGM_P msg_ = PSTR();
 #endif
 
@@ -281,6 +289,7 @@ void loop() {
         if (battery_needs_charge) {
           digitalWrite(3, HIGH);
           charger_working_tics = 0;
+          current_ticks_before_chrg_off = 0;
           delta_is_ok = 0;
           EEPROM.update(EEPROM_STATE_BYTE, STATE_CHARGING);
 #ifdef USE_SERIAL
@@ -294,6 +303,7 @@ void loop() {
             digitalWrite(3, HIGH);
             battery_needs_charge = true;
             charger_working_tics = 0;
+            current_ticks_before_chrg_off = 0;
             delta_is_ok = 0;
             EEPROM.update(EEPROM_STATE_BYTE, STATE_CHARGING);
 #ifdef USE_SERIAL
@@ -310,18 +320,40 @@ void loop() {
     }
   }
 
+#ifdef LCD
+  current_sensor_state = digitalRead( ex0, CURRENT_SENSOR );
+  if ( current_sensor_state > -1 and current_sensor_state != current_sensor_state_prev ){
+    if ( current_sensor_state == LOW ) {
+#ifdef USE_SERIAL
+      Serial.println(FPSTR(msg_current_detect));
+#endif
+      fill_msg_buf(msg_current_detect);
+    } else { 
+#ifdef USE_SERIAL
+      Serial.println(FPSTR(msg_current_off));
+#endif
+      fill_msg_buf(msg_current_off);
+    }
+    current_sensor_state_prev = current_sensor_state;
+  }
+#endif
+
   if (charger_state == HIGH) {
     charger_working_tics++;
 #ifdef LCD
-    if ( ( charger_working_tics > tics_before_current_sensor_start ) and ( charger_mode != 2 ) ){
-      if ( digitalRead( ex0, CURRENT_SENSOR ) == HIGH ){
-        digitalWrite(3, LOW);
-        battery_needs_charge = false;
-        EEPROM.update(EEPROM_STATE_BYTE, STATE_STANDBY);
+    if ( ( current_sensor_state > -1 ) and ( charger_working_tics > tics_before_current_sensor_start ) and ( charger_mode != 2 ) ){
+      if ( current_sensor_state == HIGH ){
+        current_ticks_before_chrg_off++;
+        if ( current_ticks_before_chrg_off > ticks_before_chrg_off ) {
+          digitalWrite(3, LOW);
+          battery_needs_charge = false;
+          current_ticks_before_chrg_off = 0;
+          EEPROM.update(EEPROM_STATE_BYTE, STATE_STANDBY);
 #ifdef USE_SERIAL
-        Serial.println(FPSTR(msg_chgr_off_sensor));
+          Serial.println(FPSTR(msg_chgr_off_sensor));
 #endif
-        fill_msg_buf(msg_chgr_off_sensor);
+          fill_msg_buf(msg_chgr_off_sensor);
+        }
       }
     }
 #endif
@@ -487,6 +519,7 @@ void lstart_red() {
       lcd_print_warning(msg_charger_goes_off);
       digitalWrite(3, LOW);
       battery_needs_charge = false;
+      current_ticks_before_chrg_off = 0;
       charger_mode = 0;
       EEPROM.update(EEPROM_STATE_BYTE, STATE_STANDBY);
 #ifdef USE_SERIAL
@@ -516,6 +549,7 @@ void lstart_grn() {
       digitalWrite(3, HIGH);
       battery_needs_charge = true;
       charger_working_tics = 0;
+      current_ticks_before_chrg_off = 0;
       delta_is_ok = 0;
       if ( charger_mode == 2 ) {
 #ifdef USE_SERIAL
